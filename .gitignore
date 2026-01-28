@@ -1,0 +1,13 @@
+*
+
+!.gitignore
+!Cargo.lock
+!Cargo.toml
+!LICENSE
+!README.md
+
+!src/
+!src/**
+
+!assets/
+!assets/**

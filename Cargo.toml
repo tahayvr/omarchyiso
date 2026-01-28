@@ -1,0 +1,29 @@
+[package]
+name = "omarchyiso"
+version = "1.0.0"
+edition = "2024"
+authors = ["Taha YVR <taha@noiserandom.com>"]
+description = "A TUI app for creating customized Omarchy Linux ISO images"
+repository = "https://github.com/tahayvr/omarchyiso"
+license = "MIT"
+keywords = ["tui", "iso", "linux", "omarchy", "builder"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "omarchyiso"
+path = "src/main.rs"
+
+[dependencies]
+crossterm = "0.28"
+ratatui = "0.29"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+dirs = "6"
+futures = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
