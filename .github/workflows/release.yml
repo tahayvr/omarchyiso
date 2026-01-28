@@ -49,9 +49,9 @@ jobs:
       - name: Build Release
         run: |
           if [ "${{ matrix.use_cross }}" == "true" ]; then
-            cross build --release --target ${{ matrix.target }} --verbose
+            cross build --release --locked --target ${{ matrix.target }} --verbose
           else
-            cargo build --release --target ${{ matrix.target }} --verbose
+            cargo build --release --locked --target ${{ matrix.target }} --verbose
           fi
 
       # Package the binary and documentation into a tarball
