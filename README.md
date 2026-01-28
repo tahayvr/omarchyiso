@@ -1,4 +1,4 @@
-# Omarchy ISO Builder
+# OmarchyISO
 
 A TUI app for creating customized [Omarchy Linux](https://omarchy.org) ISO images with your personal dotfiles, configs and packages.
 
@@ -11,20 +11,19 @@ A TUI app for creating customized [Omarchy Linux](https://omarchy.org) ISO image
 ## Requirements
 
 - Omarchy Linux (of course!)
-<!--
 
 ## Installation
 
-````bash
+```bash
 yay -S omarchyiso
-``` -->
+
+```
 
 ## License
 
 MIT
 
-## Credits
+## Acknowledgements
 
 - **'omarchyiso'** uses a fork of [omarchy-iso](https://github.com/omacom-io/omarchy-iso) for the core ISO building process.
 - Made with [Rust](https://rust-lang.org/) & [Ratatui](https://github.com/ratatui/ratatui)
-````
