@@ -5,6 +5,8 @@
 !Cargo.toml
 !LICENSE
 !README.md
+!.github/
+!.github/**
 
 !src/
 !src/**

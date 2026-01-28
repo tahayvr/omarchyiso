@@ -1,0 +1,72 @@
+name: Release
+
+# Trigger the workflow when a tag starting with "v" (e.g. v1.0.0) is pushed
+on:
+  push:
+    tags:
+      - "v*"
+
+# Set environment variables for the build
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            use_cross: false
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+            use_cross: true
+    permissions:
+      contents: write
+
+    steps:
+      # Check out the repository code
+      - uses: actions/checkout@v4
+
+      # Install the stable Rust toolchain
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Your app requires system dependencies to build/link
+      - name: Install System Dependencies
+        if: matrix.use_cross == false
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Install Cross
+        if: matrix.use_cross == true
+        uses: taiki-e/install-action@cross
+
+      # Build the project in release mode
+      - name: Build Release
+        run: |
+          if [ "${{ matrix.use_cross }}" == "true" ]; then
+            cross build --release --target ${{ matrix.target }} --verbose
+          else
+            cargo build --release --target ${{ matrix.target }} --verbose
+          fi
+
+      # Package the binary and documentation into a tarball
+      - name: Create Release Archive
+        run: |
+          # Create a tarball containing the binary and README
+          mkdir -p release-dist
+          cp target/${{ matrix.target }}/release/omarchyiso release-dist/
+          cp README.md release-dist/
+          cp LICENSE release-dist/
+          cd release-dist
+          tar -czf ../omarchyiso-${{ matrix.arch }}-linux.tar.gz *
+
+      # Upload the assets
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: omarchyiso-${{ matrix.arch }}-linux.tar.gz
