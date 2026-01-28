@@ -32,8 +32,11 @@ if ! command -v curl &> /dev/null; then
 fi
 
 # 2. Get latest release URL for specific target
-echo "Fetching latest version for $ARCH"
-LATEST_URL=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | \
+RELEASE_JSON=$(curl -s "https://api.github.com/repos/$REPO/releases/latest")
+VERSION=$(echo "$RELEASE_JSON" | grep '"tag_name":' | head -n 1 | cut -d '"' -f 4)
+echo "Found latest version: ${VERSION} for ${ARCH}"
+
+LATEST_URL=$(echo "$RELEASE_JSON" | \
     grep "browser_download_url" | \
     grep "omarchyiso-$ARCH-linux.tar.gz" | \
     cut -d '"' -f 4)
