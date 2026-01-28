@@ -19,6 +19,12 @@ yay -S omarchyiso
 
 ```
 
+Or use the install script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tahayvr/omarchyiso/main/install.sh | bash
+```
+
 ## License
 
 MIT
