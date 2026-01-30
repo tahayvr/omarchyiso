@@ -2,10 +2,14 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use tokio::fs;
 
+use tokio::io::AsyncWriteExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command as AsyncCommand;
 use tokio::process::Child;
+use tokio::process::Command as AsyncCommand;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+
+use std::sync::Arc;
 
 use crate::ui::Ui;
 
@@ -30,6 +34,8 @@ impl Drop for ProcessGuard {
 
 pub struct Config {
     pub work_dir: PathBuf,
+    pub dev_mode: bool,
+    pub build_log_path: Option<PathBuf>,
     pub aur_packages: Vec<String>,
     pub selected_aur: Vec<bool>,
     pub official_packages: Vec<String>,
@@ -44,13 +50,15 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new() -> Self {
+    pub fn new(dev_mode: bool) -> Self {
         let work_dir = std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
             .join("omarchyiso_build");
 
         Self {
             work_dir,
+            dev_mode,
+            build_log_path: None,
             aur_packages: Vec::new(),
             selected_aur: Vec::new(),
             official_packages: Vec::new(),
@@ -65,6 +73,34 @@ impl Config {
         }
     }
 
+    async fn create_dev_log_file(&mut self) -> Result<Option<Arc<Mutex<tokio::fs::File>>>> {
+        if !self.dev_mode {
+            return Ok(None);
+        }
+
+        let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let logs_dir = base_dir.join("omarchyiso_logs");
+        fs::create_dir_all(&logs_dir).await?;
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let log_path = logs_dir.join(format!("build-{ts}.log"));
+
+        let mut file = tokio::fs::File::create(&log_path)
+            .await
+            .with_context(|| format!("Failed to create build log at {}", log_path.display()))?;
+
+        file.write_all(b"omarchyiso --dev build log\n").await.ok();
+        file.write_all(format!("work_dir: {}\n\n", self.work_dir.display()).as_bytes())
+            .await
+            .ok();
+
+        self.build_log_path = Some(log_path);
+        Ok(Some(Arc::new(Mutex::new(file))))
+    }
+
     pub async fn clean_work_dir(&self) -> Result<()> {
         if self.work_dir.exists() {
             // Attempt to unmount anything just in case
@@ -73,7 +109,7 @@ impl Config {
                 .arg(&self.work_dir)
                 .output()
                 .await;
-            
+
             // Try to remove the directory
             if let Err(_e) = fs::remove_dir_all(&self.work_dir).await {
                 // If native removal fails (likely permission issues from Docker artifacts),
@@ -81,12 +117,18 @@ impl Config {
                 if let Some(parent) = self.work_dir.parent() {
                     let dir_name = self.work_dir.file_name().unwrap().to_str().unwrap();
                     let parent_lossy = parent.to_string_lossy();
-                    
+
                     if let Ok(mut child) = AsyncCommand::new("docker")
                         .args([
-                            "run", "--rm", "--privileged",
-                            "-v", &format!("{}:/work", parent_lossy),
-                            "alpine", "rm", "-rf", &format!("/work/{}", dir_name)
+                            "run",
+                            "--rm",
+                            "--privileged",
+                            "-v",
+                            &format!("{}:/work", parent_lossy),
+                            "alpine",
+                            "rm",
+                            "-rf",
+                            &format!("/work/{}", dir_name),
                         ])
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null())
@@ -95,11 +137,11 @@ impl Config {
                         let _ = child.wait().await;
                     }
                 }
-                
+
                 // Final retry with standard remove in case docker fixed it or it was a temporary lock
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 if self.work_dir.exists() {
-                     fs::remove_dir_all(&self.work_dir).await.context("Failed to clean build directory. You may need to run with sudo or manually remove 'omarchyiso_build'.")?;
+                    fs::remove_dir_all(&self.work_dir).await.context("Failed to clean build directory. You may need to run with sudo or manually remove 'omarchyiso_build'.")?;
                 }
             }
         }
@@ -232,12 +274,12 @@ impl Config {
                 if !name.starts_with('.') {
                     continue;
                 }
-                
+
                 // Skip .config directory (handled separately)
                 if name == ".config" {
                     continue;
                 }
-                
+
                 // Skip common directories we don't want to include
                 if matches!(name, ".cache" | ".local" | ".mozilla" | ".ssh" | ".gnupg") {
                     continue;
@@ -323,7 +365,12 @@ impl Config {
         self.home_dotfiles
             .iter()
             .enumerate()
-            .filter(|(i, _)| self.selected_home_dotfiles.get(*i).copied().unwrap_or(false))
+            .filter(|(i, _)| {
+                self.selected_home_dotfiles
+                    .get(*i)
+                    .copied()
+                    .unwrap_or(false)
+            })
             .map(|(_, p)| {
                 // Remove trailing slash
                 p.trim_end_matches('/').to_string()
@@ -390,6 +437,11 @@ impl Config {
         output_tx
             .send("⏱  This will take 15-60 minutes".to_string())
             .ok();
+
+        let log_file = self.create_dev_log_file().await?;
+        if let Some(p) = &self.build_log_path {
+            output_tx.send(format!("📝 Dev log: {}", p.display())).ok();
+        }
         output_tx.send("".to_string()).ok();
 
         let mut child = AsyncCommand::new("./bin/omarchy-iso-make")
@@ -410,24 +462,42 @@ impl Config {
 
         // Stream stdout in real-time
         let tx_stdout = output_tx.clone();
+        let log_stdout = log_file.clone();
         let stdout_handle = tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                if tx_stdout.send(line).is_err() {
+                let ui_line = line.clone();
+
+                if tx_stdout.send(ui_line).is_err() {
                     break;
+                }
+
+                if let Some(log) = &log_stdout {
+                    let mut f = log.lock().await;
+                    let _ = f.write_all(line.as_bytes()).await;
+                    let _ = f.write_all(b"\n").await;
                 }
             }
         });
 
         // Stream stderr in real-time
         let tx_stderr = output_tx.clone();
+        let log_stderr = log_file.clone();
         let stderr_handle = tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                if tx_stderr.send(format!("⚠ {}", line)).is_err() {
+                let ui_line = format!("⚠ {}", line);
+                if tx_stderr.send(ui_line).is_err() {
                     break;
+                }
+
+                if let Some(log) = &log_stderr {
+                    let mut f = log.lock().await;
+                    let _ = f.write_all(b"[stderr] ").await;
+                    let _ = f.write_all(line.as_bytes()).await;
+                    let _ = f.write_all(b"\n").await;
                 }
             }
         });
@@ -449,6 +519,14 @@ impl Config {
             output_tx.send("".to_string()).ok();
             output_tx.send("❌ Build failed!".to_string()).ok();
 
+            if let Some(log) = &log_file {
+                let mut f = log.lock().await;
+                let _ = f
+                    .write_all(format!("\n[exit] status: {:?}\n", status.code()).as_bytes())
+                    .await;
+                let _ = f.flush().await;
+            }
+
             // Cleanup on failure
             self.clean_work_dir().await.ok();
 
@@ -459,6 +537,12 @@ impl Config {
         output_tx
             .send("✓ ISO build completed successfully".to_string())
             .ok();
+
+        if let Some(log) = &log_file {
+            let mut f = log.lock().await;
+            let _ = f.write_all(b"\n[exit] status: 0\n").await;
+            let _ = f.flush().await;
+        }
 
         // Find and move ISO
         output_tx
@@ -552,7 +636,9 @@ impl Config {
             .context("Could not determine home directory")?;
 
         // Copy to omarchy's default directory
-        let target_dir = self.work_dir.join("configs/airootfs/root/omarchy/default/home-dotfiles");
+        let target_dir = self
+            .work_dir
+            .join("configs/airootfs/root/omarchy/default/home-dotfiles");
         fs::create_dir_all(&target_dir).await?;
 
         for item in selected {
