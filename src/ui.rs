@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 
 use crate::app::AppState;
@@ -163,11 +163,21 @@ impl Ui {
         f.render_widget(logo, chunks[0]);
 
         // Description box
-        let current_dir = config
+        let raw_current_dir = config
             .work_dir
             .parent()
             .and_then(|p| p.to_str())
             .unwrap_or(".");
+
+        let current_dir = if let Ok(home) = std::env::var("HOME") {
+            if raw_current_dir.starts_with(&home) {
+                raw_current_dir.replacen(&home, "~", 1)
+            } else {
+                raw_current_dir.to_string()
+            }
+        } else {
+            raw_current_dir.to_string()
+        };
         
         let desc_text = vec![
             Line::from(Span::styled(
@@ -190,15 +200,13 @@ impl Ui {
                 Span::raw("Exclude unwanted default packages installed by Omarchy"),
             ]),
             Line::from(""),
-            Line::from(vec![
-                Span::raw("ISO will be created in: "),
-                Span::styled(
-                    current_dir,
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
+            Line::from("ISO will be created in the current directory: "),
+            Line::from(Span::styled(
+                current_dir.as_str(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
         ];
 
         let desc_block = Block::default()
@@ -301,7 +309,7 @@ impl Ui {
         let search_style = if !self.filter_text.is_empty() {
             Style::default().fg(Color::Yellow)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::White)
         };
         let search = Paragraph::new(search_text)
             .style(search_style)
@@ -635,8 +643,7 @@ impl Ui {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Green))
-                    .title(" Review Your Configuration "),
+                    .border_style(Style::default().fg(Color::Green)),
             )
             .wrap(Wrap { trim: true });
 
@@ -644,14 +651,7 @@ impl Ui {
 
         // Controls
         let controls = Paragraph::new(vec![
-            Line::from(""),
             Line::from(vec![
-                Span::styled(
-                    "WARNING: ",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
                 Span::styled(
                     "Build will take 15-60 minutes!",
                     Style::default()
@@ -669,7 +669,7 @@ impl Ui {
                         .add_modifier(Modifier::BOLD)
                         .add_modifier(Modifier::UNDERLINED),
                 ),
-                Span::styled(" to START BUILD  |  ", Style::default().fg(Color::White)),
+                Span::styled(" to START  |  ", Style::default().fg(Color::White)),
                 Span::styled(
                     "Q",
                     Style::default()
@@ -755,7 +755,7 @@ impl Ui {
             ]
         } else {
             // Show last N lines that fit in the area
-            let available_height = chunks[1].height.saturating_sub(2) as usize; // Account for borders
+            let available_height = chunks[1].height.saturating_sub(4) as usize; // Account for borders + padding
             let start_idx = build_output.len().saturating_sub(available_height);
 
             build_output[start_idx..]
@@ -768,17 +768,6 @@ impl Ui {
                         ))
                     } else if line.starts_with('❌') || line.starts_with('⚠') {
                         Line::from(Span::styled(line.as_str(), Style::default().fg(Color::Red)))
-                    } else if line.starts_with('🔧')
-                        || line.starts_with('📝')
-                        || line.starts_with('📁')
-                        || line.starts_with('🔨')
-                        || line.starts_with('🚀')
-                        || line.starts_with('📦')
-                    {
-                        Line::from(Span::styled(
-                            line.as_str(),
-                            Style::default().fg(Color::Cyan),
-                        ))
                     } else if line.starts_with('⏱') {
                         Line::from(Span::styled(
                             line.as_str(),
@@ -797,7 +786,8 @@ impl Ui {
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::Blue))
-                    .title(format!(" Build Log ({} lines) ", build_output.len())),
+                    .title(format!(" Build Log ({} lines) ", build_output.len()))
+                    .padding(Padding::uniform(1)),
             )
             .wrap(Wrap { trim: false });
         f.render_widget(output_log, chunks[1]);
@@ -1021,7 +1011,7 @@ impl Ui {
             ]
         } else {
             // Calculate visible range with scroll offset
-            let available_height = chunks[2].height.saturating_sub(2) as usize;
+            let available_height = chunks[2].height.saturating_sub(4) as usize;
             let total_lines = build_output.len();
             let max_scroll = total_lines.saturating_sub(available_height);
 
@@ -1059,17 +1049,6 @@ impl Ui {
                                 .fg(Color::Red)
                                 .add_modifier(Modifier::BOLD),
                         ))
-                    } else if line.starts_with('🔧')
-                        || line.starts_with('📝')
-                        || line.starts_with('📁')
-                        || line.starts_with('🔨')
-                        || line.starts_with('🚀')
-                        || line.starts_with('📦')
-                    {
-                        Line::from(Span::styled(
-                            line.as_str(),
-                            Style::default().fg(Color::Cyan),
-                        ))
                     } else if line.starts_with('⏱') {
                         Line::from(Span::styled(
                             line.as_str(),
@@ -1082,7 +1061,7 @@ impl Ui {
                 .collect()
         };
 
-        let scroll_info = if build_output.len() > chunks[2].height.saturating_sub(2) as usize {
+        let scroll_info = if build_output.len() > chunks[2].height.saturating_sub(4) as usize {
             format!(
                 " Build Log ({} lines) - Scroll with ↑↓ - Showing last lines ",
                 build_output.len()
@@ -1097,7 +1076,8 @@ impl Ui {
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::Red))
-                    .title(scroll_info),
+                    .title(scroll_info)
+                    .padding(Padding::uniform(1)),
             )
             .wrap(Wrap { trim: false });
         f.render_widget(output_log, chunks[2]);
