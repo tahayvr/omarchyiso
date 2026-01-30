@@ -1,6 +1,6 @@
 [package]
 name = "omarchyiso"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 authors = ["Taha YVR <taha@noiserandom.com>"]
 description = "A TUI app for creating customized Omarchy Linux ISO images"

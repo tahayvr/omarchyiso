@@ -6,6 +6,7 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
+use tokio::fs;
 use tokio::sync::mpsc;
 
 use crate::config::Config;
@@ -70,6 +71,17 @@ impl App {
             DisableMouseCapture
         )?;
         terminal.show_cursor()?;
+
+        // Abort build if active
+        if let Some(handle) = &mut self.build_handle {
+            handle.abort();
+            let _ = handle.await;
+        }
+
+        // Cleanup build directory if it exists (e.g. forced quit during build)
+        if self.config.work_dir.exists() {
+            fs::remove_dir_all(&self.config.work_dir).await.ok();
+        }
 
         result
     }

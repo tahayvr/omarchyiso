@@ -1,14 +1,32 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use tokio::fs;
+
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as AsyncCommand;
+use tokio::process::Child;
 use tokio::sync::mpsc;
 
 use crate::ui::Ui;
 
 const REPO_URL: &str = "https://github.com/tahayvr/omarchy-iso";
 const OMARCHY_BASE_PKGS_URL: &str = "https://raw.githubusercontent.com/basecamp/omarchy/refs/heads/master/install/omarchy-base.packages";
+
+// Guard to kill child process group on drop
+struct ProcessGuard(Option<Child>);
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.take() {
+            if let Some(id) = child.id() {
+                // Kill the entire process group using system 'kill'
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &format!("-{}", id)])
+                    .output();
+            }
+        }
+    }
+}
 
 pub struct Config {
     pub work_dir: PathBuf,
@@ -47,11 +65,50 @@ impl Config {
         }
     }
 
+    pub async fn clean_work_dir(&self) -> Result<()> {
+        if self.work_dir.exists() {
+            // Attempt to unmount anything just in case
+            let _ = AsyncCommand::new("umount")
+                .arg("-R")
+                .arg(&self.work_dir)
+                .output()
+                .await;
+            
+            // Try to remove the directory
+            if let Err(_e) = fs::remove_dir_all(&self.work_dir).await {
+                // If native removal fails (likely permission issues from Docker artifacts),
+                // try to use Docker to remove it since Docker created the mess.
+                if let Some(parent) = self.work_dir.parent() {
+                    let dir_name = self.work_dir.file_name().unwrap().to_str().unwrap();
+                    let parent_lossy = parent.to_string_lossy();
+                    
+                    if let Ok(mut child) = AsyncCommand::new("docker")
+                        .args([
+                            "run", "--rm", "--privileged",
+                            "-v", &format!("{}:/work", parent_lossy),
+                            "alpine", "rm", "-rf", &format!("/work/{}", dir_name)
+                        ])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        let _ = child.wait().await;
+                    }
+                }
+                
+                // Final retry with standard remove in case docker fixed it or it was a temporary lock
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if self.work_dir.exists() {
+                     fs::remove_dir_all(&self.work_dir).await.context("Failed to clean build directory. You may need to run with sudo or manually remove 'omarchyiso_build'.")?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub async fn setup(&self) -> Result<()> {
         // Remove existing build directory
-        if self.work_dir.exists() {
-            fs::remove_dir_all(&self.work_dir).await?;
-        }
+        self.clean_work_dir().await?;
 
         // Clone repository
         let output = AsyncCommand::new("git")
@@ -338,13 +395,20 @@ impl Config {
         let mut child = AsyncCommand::new("./bin/omarchy-iso-make")
             .args(["--no-boot-offer", "--no-cache"])
             .current_dir(&self.work_dir)
+            .process_group(0) // Create a new process group
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
             .context("Failed to spawn omarchy-iso-make")?;
 
-        // Stream stdout in real-time
+        // Capture output streams
         let stdout = child.stdout.take().context("Failed to capture stdout")?;
+        let stderr = child.stderr.take().context("Failed to capture stderr")?;
+
+        // Wrap child in guard to ensure kill on drop (cancellation)
+        let mut child_guard = ProcessGuard(Some(child));
+
+        // Stream stdout in real-time
         let tx_stdout = output_tx.clone();
         let stdout_handle = tokio::spawn(async move {
             let reader = BufReader::new(stdout);
@@ -357,7 +421,6 @@ impl Config {
         });
 
         // Stream stderr in real-time
-        let stderr = child.stderr.take().context("Failed to capture stderr")?;
         let tx_stderr = output_tx.clone();
         let stderr_handle = tokio::spawn(async move {
             let reader = BufReader::new(stderr);
@@ -373,14 +436,22 @@ impl Config {
         let _ = tokio::join!(stdout_handle, stderr_handle);
 
         // Wait for the process to complete
+        let child = child_guard.0.as_mut().unwrap();
         let status = child
             .wait()
             .await
             .context("Failed to wait for build process")?;
 
+        // Process completed, take out of guard
+        let _ = child_guard.0.take();
+
         if !status.success() {
             output_tx.send("".to_string()).ok();
             output_tx.send("❌ Build failed!".to_string()).ok();
+
+            // Cleanup on failure
+            self.clean_work_dir().await.ok();
+
             anyhow::bail!("Build failed with exit code {:?}", status.code());
         }
 
@@ -447,8 +518,10 @@ impl Config {
         for item in selected {
             // Remove trailing slash if for folders
             let item_name = item.trim_end_matches('/');
-            let src_path = user_home.join(".config").join(item_name);
-            let dest_path = target_dir.join(item_name);
+            let src_path = user_home.join(item_name);
+            // For destination, we want to strip the .config/ prefix so they are flat inside custom-config
+            let clean_name = item_name.strip_prefix(".config/").unwrap_or(item_name);
+            let dest_path = target_dir.join(clean_name);
 
             if !src_path.exists() {
                 continue;
