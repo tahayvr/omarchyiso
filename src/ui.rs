@@ -25,7 +25,7 @@ const LOGO: &str = r#"
 ███   ███  ███   ███   ███  ███   ███ ██████████  ███   █▄   ███   ███  ▄██   ███
 ███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███
  ▀█████▀    ▀█   ███   █▀   ███   █▀   ███   ███  ███████▀   ███   █▀    ▀█████▀ 
-                                       ███   █▀              OMARCHYiso v1.0.1   
+                                       ███   █▀              OMARCHYiso v1.0.2   
 "#;
 
 impl Ui {
@@ -85,14 +85,46 @@ impl Ui {
             AppState::SelectingDotfiles => {
                 self.render_dotfiles_selection(f, size, &config.dotfiles, &config.selected_dotfiles)
             }
-            AppState::SelectingHomeDotfiles => {
-                self.render_home_dotfiles_selection(f, size, &config.home_dotfiles, &config.selected_home_dotfiles)
-            }
+            AppState::SelectingHomeDotfiles => self.render_home_dotfiles_selection(
+                f,
+                size,
+                &config.home_dotfiles,
+                &config.selected_home_dotfiles,
+            ),
             AppState::Summary => self.render_summary(f, size, config),
             AppState::Building => self.render_building(f, size, build_output),
             AppState::Complete => self.render_complete(f, size, config),
             AppState::Error => self.render_error(f, size, error_message, build_output),
         }
+
+        if config.dev_mode {
+            self.render_dev_badge(f, size);
+        }
+    }
+
+    fn render_dev_badge(&self, f: &mut Frame, area: Rect) {
+        let label = " DEV MODE ";
+        let width = label.len() as u16;
+
+        if area.width < width || area.height < 1 {
+            return;
+        }
+
+        let badge_area = Rect {
+            x: area.x + area.width.saturating_sub(width),
+            y: area.y,
+            width,
+            height: 1,
+        };
+
+        let badge = Paragraph::new(label).style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+
+        f.render_widget(badge, badge_area);
     }
 
     fn get_step_indicator(&self, current_step: usize) -> Line<'_> {
@@ -178,7 +210,7 @@ impl Ui {
         } else {
             raw_current_dir.to_string()
         };
-        
+
         let desc_text = vec![
             Line::from(Span::styled(
                 "Create Your Custom Omarchy Linux ISO",
@@ -212,7 +244,7 @@ impl Ui {
         let desc_block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Blue));
+            .border_style(Style::default().fg(Color::Cyan));
 
         let description = Paragraph::new(desc_text)
             .block(desc_block)
@@ -296,7 +328,7 @@ impl Ui {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Blue)),
+                    .border_style(Style::default().fg(Color::Cyan)),
             );
         f.render_widget(header, chunks[0]);
 
@@ -388,7 +420,12 @@ impl Ui {
 
         // Status bar
         let status_text = if !self.filter_text.is_empty() {
-            format!("Showing {} of {} {}", filtered.len(), packages.len(), item_label)
+            format!(
+                "Showing {} of {} {}",
+                filtered.len(),
+                packages.len(),
+                item_label
+            )
         } else {
             format!("Total: {} {}", packages.len(), item_label)
         };
@@ -456,7 +493,15 @@ impl Ui {
         dotfiles: &[String],
         selected: &[bool],
     ) {
-        self.render_package_selection(f, area, ".config Files & Folders", dotfiles, selected, 4, "items");
+        self.render_package_selection(
+            f,
+            area,
+            ".config Files & Folders",
+            dotfiles,
+            selected,
+            4,
+            "items",
+        );
     }
 
     fn render_home_dotfiles_selection(
@@ -535,7 +580,7 @@ impl Ui {
                     .add_modifier(Modifier::BOLD),
             ),
         ]));
-        
+
         // Show .config dotfiles
         if !selected_dotfiles.is_empty() {
             text.push(Line::from(Span::styled(
@@ -552,7 +597,7 @@ impl Ui {
                 )));
             }
         }
-        
+
         // Show home dir dotfiles
         if !selected_home_dotfiles.is_empty() {
             text.push(Line::from(Span::styled(
@@ -569,7 +614,7 @@ impl Ui {
                 )));
             }
         }
-        
+
         text.push(Line::from(""));
 
         // Official packages section
@@ -651,14 +696,12 @@ impl Ui {
 
         // Controls
         let controls = Paragraph::new(vec![
-            Line::from(vec![
-                Span::styled(
-                    "Build will take 15-60 minutes!",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
+            Line::from(vec![Span::styled(
+                "Build will take 15-60 minutes!",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Press ", Style::default().fg(Color::White)),
@@ -881,22 +924,20 @@ impl Ui {
 
         // ISO location
         let iso_path = config.iso_path.as_deref().unwrap_or("Current folder");
-        let iso_text = vec![
-            Line::from(vec![
-                Span::styled(
-                    "ISO Location: ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    iso_path,
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
-        ];
+        let iso_text = vec![Line::from(vec![
+            Span::styled(
+                "ISO Location: ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                iso_path,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])];
         let iso_info = Paragraph::new(iso_text).alignment(Alignment::Center).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -1023,7 +1064,7 @@ impl Ui {
             } else {
                 self.error_scroll_offset.min(max_scroll)
             };
-            
+
             let end_idx = (scroll_offset + available_height).min(total_lines);
 
             build_output[scroll_offset..end_idx]
@@ -1038,16 +1079,18 @@ impl Ui {
                     } else if line.starts_with('❌') {
                         Line::from(Span::styled(
                             line.as_str(),
-                            Style::default()
-                                .fg(Color::Red)
-                                .add_modifier(Modifier::BOLD),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                         ))
-                    } else if line.starts_with('⚠') || line.contains("error") || line.contains("Error") || line.contains("ERROR") || line.contains("failed") || line.contains("Failed") {
+                    } else if line.starts_with('⚠')
+                        || line.contains("error")
+                        || line.contains("Error")
+                        || line.contains("ERROR")
+                        || line.contains("failed")
+                        || line.contains("Failed")
+                    {
                         Line::from(Span::styled(
                             line.as_str(),
-                            Style::default()
-                                .fg(Color::Red)
-                                .add_modifier(Modifier::BOLD),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                         ))
                     } else if line.starts_with('⏱') {
                         Line::from(Span::styled(
@@ -1192,7 +1235,8 @@ impl Ui {
                 if let Some(&actual_idx) = filtered.get(self.selected_index)
                     && actual_idx < config.selected_home_dotfiles.len()
                 {
-                    config.selected_home_dotfiles[actual_idx] = !config.selected_home_dotfiles[actual_idx];
+                    config.selected_home_dotfiles[actual_idx] =
+                        !config.selected_home_dotfiles[actual_idx];
                 }
             }
             _ => {}

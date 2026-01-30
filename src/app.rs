@@ -29,6 +29,7 @@ pub enum AppState {
 pub struct App {
     state: AppState,
     config: Config,
+    dev_mode: bool,
     ui: Ui,
     should_quit: bool,
     error_message: Option<String>,
@@ -39,10 +40,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Result<Self> {
+    pub fn new(dev_mode: bool) -> Result<Self> {
         Ok(Self {
             state: AppState::Welcome,
-            config: Config::new(),
+            config: Config::new(dev_mode),
+            dev_mode,
             ui: Ui::new(),
             should_quit: false,
             error_message: None,
@@ -121,7 +123,7 @@ impl App {
                 self.output_rx = Some(rx);
 
                 // Take the config and spawn the build in a separate task
-                let mut config = std::mem::replace(&mut self.config, Config::new());
+                let mut config = std::mem::replace(&mut self.config, Config::new(self.dev_mode));
                 let handle = tokio::spawn(async move {
                     let result = config.build_iso(tx).await;
                     (config, result)
@@ -130,27 +132,30 @@ impl App {
             }
 
             // Check if build is complete
-            if self.state == AppState::Building && self.build_started
+            if self.state == AppState::Building
+                && self.build_started
                 && let Some(handle) = &mut self.build_handle
-                    && handle.is_finished() {
-                        let (config, result) = handle.await.unwrap();
-                        self.config = config; // Restore the config
-                        self.build_handle = None;
+                && handle.is_finished()
+            {
+                let (config, result) = handle.await.unwrap();
+                self.config = config; // Restore the config
+                self.build_handle = None;
 
-                        match result {
-                            Ok(_) => self.state = AppState::Complete,
-                            Err(e) => {
-                                self.error_message = Some(e.to_string());
-                                self.state = AppState::Error;
-                            }
-                        }
+                match result {
+                    Ok(_) => self.state = AppState::Complete,
+                    Err(e) => {
+                        self.error_message = Some(e.to_string());
+                        self.state = AppState::Error;
                     }
+                }
+            }
 
             if event::poll(std::time::Duration::from_millis(100))?
                 && let Event::Key(key) = event::read()?
-                    && key.kind == KeyEventKind::Press {
-                        self.handle_input(key.code).await?;
-                    }
+                && key.kind == KeyEventKind::Press
+            {
+                self.handle_input(key.code).await?;
+            }
         }
 
         Ok(())

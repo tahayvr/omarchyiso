@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "omarchyiso"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "crossterm",
