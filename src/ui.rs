@@ -244,7 +244,7 @@ impl Ui {
         let desc_block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Blue));
+            .border_style(Style::default().fg(Color::Cyan));
 
         let description = Paragraph::new(desc_text)
             .block(desc_block)
@@ -328,7 +328,7 @@ impl Ui {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Blue)),
+                    .border_style(Style::default().fg(Color::Cyan)),
             );
         f.render_widget(header, chunks[0]);
 
