@@ -8,7 +8,7 @@
 !.github/
 !.github/**
 !install.sh
-!up-version
+!update-version
 
 !src/
 !src/**
