@@ -47,6 +47,8 @@ pub struct Config {
     pub home_dotfiles: Vec<String>,
     pub selected_home_dotfiles: Vec<bool>,
     pub iso_path: Option<String>,
+    pub use_dev_branch: bool,
+    pub use_edge_mirror: bool,
 }
 
 impl Config {
@@ -70,6 +72,8 @@ impl Config {
             home_dotfiles: Vec::new(),
             selected_home_dotfiles: Vec::new(),
             iso_path: None,
+            use_dev_branch: false,
+            use_edge_mirror: false,
         }
     }
 
@@ -444,8 +448,16 @@ impl Config {
         }
         output_tx.send("".to_string()).ok();
 
+        let mut args = vec!["--no-boot-offer", "--no-cache"];
+        if self.use_dev_branch {
+            args.push("--dev");
+        }
+        if self.use_edge_mirror {
+            args.push("--edge");
+        }
+
         let mut child = AsyncCommand::new("./bin/omarchy-iso-make")
-            .args(["--no-boot-offer", "--no-cache"])
+            .args(&args)
             .current_dir(&self.work_dir)
             .process_group(0) // Create a new process group
             .stdout(std::process::Stdio::piped())

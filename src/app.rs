@@ -180,6 +180,13 @@ impl App {
                 self.ui.handle_space(&self.state, &mut self.config);
             }
             KeyCode::Char(c) => {
+                if self.state == AppState::Summary {
+                    match c {
+                        'b' | 'B' => self.config.use_dev_branch = !self.config.use_dev_branch,
+                        'm' | 'M' => self.config.use_edge_mirror = !self.config.use_edge_mirror,
+                        _ => {}
+                    }
+                }
                 self.ui.handle_char(c, &self.state);
             }
             KeyCode::Backspace => {
