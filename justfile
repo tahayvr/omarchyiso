@@ -10,3 +10,4 @@ build:
 # update the version number (x.y.z | patch | minor | major) for app
 update VER:
     ./update-version {{VER}}
+    cargo check
