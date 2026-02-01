@@ -25,7 +25,7 @@ const LOGO: &str = r#"
 ███   ███  ███   ███   ███  ███   ███ ██████████  ███   █▄   ███   ███  ▄██   ███
 ███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███
  ▀█████▀    ▀█   ███   █▀   ███   █▀   ███   ███  ███████▀   ███   █▀    ▀█████▀ 
-                                       ███   █▀              OMARCHYiso v1.0.2   
+                                       ███   █▀              OMARCHYiso v1.1.0   
 "#;
 
 impl Ui {
@@ -564,6 +564,54 @@ impl Ui {
 
         let mut text = vec![Line::from("")];
 
+        // Build Configuration Section
+        text.push(Line::from(vec![
+            Span::styled(
+                "Build Configuration:",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+
+        let branch_name = if config.use_dev_branch {
+            "Dev"
+        } else {
+            "Master"
+        };
+        let branch_color = if config.use_dev_branch {
+            Color::Magenta
+        } else {
+            Color::Green
+        };
+        text.push(Line::from(vec![
+            Span::raw("   Branch: "),
+            Span::styled(
+                branch_name,
+                Style::default().fg(branch_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" (Press 'b' to toggle)", Style::default().fg(Color::DarkGray)),
+        ]));
+
+        let mirror_name = if config.use_edge_mirror {
+            "Edge"
+        } else {
+            "Stable"
+        };
+        let mirror_color = if config.use_edge_mirror {
+            Color::Magenta
+        } else {
+            Color::Green
+        };
+        text.push(Line::from(vec![
+            Span::raw("   Mirror: "),
+            Span::styled(
+                mirror_name,
+                Style::default().fg(mirror_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" (Press 'm' to toggle)", Style::default().fg(Color::DarkGray)),
+        ]));
+
+        text.push(Line::from(""));
+
         // Dotfiles section
         let total_dotfiles = selected_dotfiles.len() + selected_home_dotfiles.len();
         text.push(Line::from(vec![
@@ -607,9 +655,9 @@ impl Ui {
             for item in selected_home_dotfiles.iter().take(3) {
                 text.push(Line::from(format!("     • {}", item)));
             }
-            if selected_home_dotfiles.len() > 3 {
+            if selected_home_dotfiles.len() > 4 {
                 text.push(Line::from(Span::styled(
-                    format!("     ... and {} more", selected_home_dotfiles.len() - 3),
+                    format!("     ... and {} more", selected_home_dotfiles.len() - 4),
                     Style::default().fg(Color::DarkGray).italic(),
                 )));
             }
